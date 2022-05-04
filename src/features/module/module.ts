@@ -2,7 +2,7 @@ export type TNodeFunc = (...params: any) => Promise<any>
 export type TTreeNode = { [key: string]: TNode }
 export type TNode = TTreeNode | TNodeFunc | Module
 
-// todo: add registers to root node
+// TODO: add registers to root node
 
 /**
  * Service module.
@@ -46,6 +46,24 @@ export type TNode = TTreeNode | TNodeFunc | Module
  * module.register('lodash.submodule', submodule)
  * 
  * 
+ * // register node without adding options into handlers
+ * module.register('lodash', {
+ *  a: (options) => ({})
+ *  b: (options) => ({})
+ * }, false)
+ * 
+ * 
+ * // register nodes
+ * module.registers({
+ *  a: (options) => ({})
+ *  b: (options) => ({})
+ * })
+ * 
+ * // register nodes without adding options into handlers
+ * module.registers({
+ *  a: (options) => ({})
+ *  b: (options) => ({})
+ * }, false)
  * 
  * const [Context, useContext] = createModuleContext({
  *  defaultValue: null,
@@ -132,7 +150,7 @@ export class Module<TreeNode = TTreeNode, Options extends object = {}>
   }
 
   /**
-   * Register handler node.
+   * Register node.
    * @example
    * // register node with nested object api endpoint
    * module.register('lodash', {
@@ -161,6 +179,13 @@ export class Module<TreeNode = TTreeNode, Options extends object = {}>
    * 
    * module.register('lodash.submodule', submodule)
    * 
+   * // register node without adding options into handlers
+   * module.register('lodash', {
+   *  a: (options) => ({})
+   *  b: (options) => ({})
+   * }, false)
+   * 
+   * 
    * @param name Node name.
    * @param node Node handler or sub node.
    * @param wrapHandlers Should the options be passed into the each functions.
@@ -179,4 +204,30 @@ export class Module<TreeNode = TTreeNode, Options extends object = {}>
 
     return this
   }
+
+    /**
+   * Register several nodes into root node.
+   * @example
+   * // register nodes
+   * module.registers({
+   *  a: (options) => ({})
+   *  b: (options) => ({})
+   * })
+   * 
+   * // register nodes without adding options into handlers
+   * module.registers({
+   *  a: (options) => ({})
+   *  b: (options) => ({})
+   * }, false)
+   * 
+   * 
+   * @param node Tree node.
+   * @param wrapHandlers Should the options be passed into the each functions.
+   * @returns This.
+   */
+    public registers(node: TTreeNode, wrapHandlers = true): this {
+      Object.entries(node).forEach(([name, node]) => this.register(name, node, wrapHandlers))
+  
+      return this
+    }
 }

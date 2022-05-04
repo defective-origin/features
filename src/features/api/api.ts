@@ -65,6 +65,25 @@ export type TOptions<TClient = any> = { client?: TClient }
  * 
  * module.register('users.comment', submodule)
  * 
+ * // register api endpoint without adding options into handlers
+ * module.register('lodash', {
+ *  get: (id, apiOptions) => ({})
+ *  create: (newObject, apiOptions) => ({})
+ * }, false)
+ * 
+ * 
+ * // register api endpoints
+ * module.registers({
+ *  get: (id, apiOptions) => ({})
+ *  create: (newObject, apiOptions) => ({})
+ * })
+ * 
+ * // register api endpoints without adding options into handlers
+ * module.registers({
+ *  get: (id, apiOptions) => ({})
+ *  create: (newObject, apiOptions) => ({})
+ * }, false)
+ * 
  * 
  * const [APIContext, useApi] = createModuleContext({
  *  defaultValue: null,
