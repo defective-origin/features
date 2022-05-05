@@ -1,4 +1,5 @@
-import { Module, TNodeFunc } from "../module/module";
+import { TNodeFunc, Module } from "../module/Module"
+
 
 export type TEndpointNode = {
   get?: TNodeFunc

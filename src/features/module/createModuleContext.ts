@@ -1,5 +1,5 @@
-import { createContext, IContextGeneratorOptions } from "./context"
-import { Module } from "./module"
+import { createContext, IContextGeneratorOptions } from "./createContext"
+import { Module } from "./Module"
 
 export type TModuleContextOptions<T> = Omit<IContextGeneratorOptions<T>, "selector">
 
