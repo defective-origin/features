@@ -1,78 +1,199 @@
 import { merge } from "lodash-es"
 
-// const endpoint = RestApiEndpoint(url, {
-//   get: options / handler()
-//   create: options / handler()
-//   update: options / handler()
-//   delete: options / handler()
-// })
-// endpoint.get() page/slice
-// endpoint.get(id/[id,id,id]) page/slice
-// endpoint.create(newObject/[newObject,newObject,newObject])
-// endpoint.update(id, newObject/[newObject,newObject,newObject])
-// endpoint.delete(id/[id,id,id])
+// TODO: add subscription on changing?
 
 
-//TODO: add documentation
-
-export interface IPaginationOptions {
+export type ID = number | string
+export type DefaultFetchOptions = RequestInit | (() => RequestInit)
+export type TPaginationOptions = {
   page: number | string
   count: number | string
 }
-export type ID = number | string
 
+/**
+ * Request interface based on REST API architecture.
+ * @example
+ * const endpoint = new RestApiEndpoint('google.com')
+ * 
+ * // init endpoint with default fetch options for all requests
+ * const endpoint = new RestApiEndpoint('google.com', { mode: 'cors', headers: { 'security-token': 'some-token' })
+ * 
+ * // init endpoint with getting postponed default fetch options for all requests
+ * const endpoint = new RestApiEndpoint('google.com', () => ({ mode: 'cors', headers: { 'security-token': 'some-token' }))
+ * 
+ * // variables
+ * const user = { id: '00000000-0000-0000-0000-000000000000', name: 'NEW NAME' }
+ * const paginationOptions = { page: 4, count: 20 }
+ * const customFetchOptions = { mode: 'cors', headers: { 'security-token': 'some-token' } }
+ * 
+ * // requests
+ * endpoint.get() // get all records
+ * endpoint.get(paginationOptions) // get several records on specific page
+ * endpoint.get(user.id) // get record by id
+ * endpoint.create(user)
+ * endpoint.update(user.id, user)
+ * endpoint.delete(user.id)
+ * 
+ * // requests with custom fetch options
+ * endpoint.get(customFetchOptions) // get all records
+ * endpoint.get(paginationOptions, customFetchOptions) // get several records on specific page
+ * endpoint.get(user.id, customFetchOptions) // get record by id
+ * endpoint.create(user, customFetchOptions)
+ * endpoint.update(user.id, user, customFetchOptions)
+ * endpoint.delete(user.id, customFetchOptions)
+ * 
+ */
 export class RestApiEndpoint {
   constructor(
     private url: string,
-    private defaultFetchOptions: RequestInit = {},
+    private defaultFetchOptions: DefaultFetchOptions = {},
   ) {}
 
-  
-  private buildUrl(...params: (string | number)[]) {
+  /**
+   * Build url from parts.
+   * @example
+   * this.buildUrl('google.com', 'users', '12345')
+   * // 'google.com/users/12345'
+   * 
+   * @param params Parts of urls.
+   * @returns Result url.
+   */
+  private buildUrl(...params: (string | number)[]): string {
     return params.filter((item) => item || item === 0).join('/')
   }
 
-  public get(idOrOptions?: IPaginationOptions | ID, isSecure?: boolean, init?: RequestInit) {
-    const initOptions = merge({ method: isSecure ? 'POST' : 'GET' }, this.defaultFetchOptions, init)
+  private getDefaultFetchOptions(): RequestInit {
+    return typeof this.defaultFetchOptions === 'function' ? this.defaultFetchOptions() : this.defaultFetchOptions
+  }
 
-    if (idOrOptions === void 0) {
-      return fetch(this.url, initOptions)
+  /**
+   * Make request for getting records.
+   * @example
+   * // variables
+   * const user = { id: '00000000-0000-0000-0000-000000000000', name: 'NEW NAME' }
+   * const paginationOptions = { page: 4, count: 20 }
+   * const customFetchOptions = { mode: 'cors', headers: { 'security-token': 'some-token' } }
+   * 
+   * // requests
+   * endpoint.get() // get all records
+   * endpoint.get(paginationOptions) // get several records on specific page
+   * endpoint.get(user.id) // get record by id
+   * 
+   * // requests with custom fetch options
+   * endpoint.get(customFetchOptions) // get all records
+   * endpoint.get(paginationOptions, customFetchOptions) // get several records on specific page
+   * endpoint.get(user.id, customFetchOptions) // get record by id
+   * 
+   * // get record via POST request
+   * endpoint.get(user.id, { isSecure: true })
+   * 
+   * 
+   * @param idOrOptionsOrInit Record id or Pagination options or Fetch options.
+   * @param init Options for fetch request.
+   * @returns Promise with response.
+   */
+  public get<TInitOptions = RequestInit & { isSecure?: boolean }>(
+    idOrOptionsOrInit: TInitOptions | TPaginationOptions | ID = {} as TInitOptions,
+    init = {} as TInitOptions,
+  ): Promise<Response> {
+    const isFirstArgumentObject = typeof idOrOptionsOrInit === 'object' && idOrOptionsOrInit !== null
+    const isFirstArgumentID = typeof idOrOptionsOrInit === "string" || typeof idOrOptionsOrInit === "number"
+    const isFirstArgumentPaginationOptions = isFirstArgumentObject && 'page' in idOrOptionsOrInit
+    const isFirstArgumentFetchOptions = !isFirstArgumentID && !isFirstArgumentPaginationOptions
+    const { isSecure, ...fetchOptions }: RequestInit & { isSecure?: boolean } = isFirstArgumentFetchOptions ? idOrOptionsOrInit : init
+    const initOptions = merge({ method: isSecure ? 'POST' : 'GET' }, this.getDefaultFetchOptions(), fetchOptions)
+
+    // get record by id
+    if (isFirstArgumentID) {
+      return fetch(this.buildUrl(this.url, idOrOptionsOrInit), initOptions)
     }
-  
-    if (typeof idOrOptions === 'object' && idOrOptions !== null) {
+
+    // get records on specific page
+    if (isFirstArgumentPaginationOptions) {
       const searchParams = new URLSearchParams({
-        page: idOrOptions.page.toString(),
-        count: idOrOptions.count.toString(),
+        page: idOrOptionsOrInit.page.toString(),
+        count: idOrOptionsOrInit.count.toString(),
       })
 
       return fetch(`${this.url}?${searchParams}`, initOptions)
     }
 
-    return fetch(this.buildUrl(this.url, idOrOptions), initOptions)
+    // get all records
+    return fetch(this.url, initOptions)
   }
 
-  public create(newObject: object, init?: RequestInit) {
+  /**
+   * Make request for creating record.
+   * @example
+   * // variables
+   * const user = { id: '00000000-0000-0000-0000-000000000000', name: 'NEW NAME' }
+   * const customFetchOptions = { mode: 'cors', headers: { 'security-token': 'some-token' } }
+   * 
+   * // create record
+   * endpoint.create(user)
+   * 
+   * // create with custom fetch options
+   * endpoint.create(user, customFetchOptions)
+   * 
+   * @param record Updated record.
+   * @param init Options for fetch request.
+   * @returns Promise with response.
+   */
+  public create(record: object, init: RequestInit = {}): Promise<Response> {
     const initOptions = merge(
-      { method: 'PUT', body: JSON.stringify(newObject), headers: { 'Content-Type': 'application/json'  } },
-      this.defaultFetchOptions,
+      { method: 'PUT', body: JSON.stringify(record), headers: { 'Content-Type': 'application/json'  } },
+      this.getDefaultFetchOptions(),
       init,
     )
   
     return fetch(this.url, initOptions)
   }
 
-  public update(id: ID, newObject: object, init?: RequestInit) {
+  /**
+   * Make request for updating record.
+   * @example
+   * const user = { id: '00000000-0000-0000-0000-000000000000', name: 'NEW NAME' }
+   * const customFetchOptions = { mode: 'cors', headers: { 'security-token': 'some-token' } }
+   * 
+   * // update record
+   * endpoint.update(user.id, user)
+   * 
+   * // update with custom fetch options
+   * endpoint.update(user.id, user, customFetchOptions)
+   * 
+   * @param id Record id.
+   * @param record Updated record.
+   * @param init Options for fetch request.
+   * @returns Promise with response.
+   */
+  public update(id: ID, record: object, init: RequestInit = {}): Promise<Response> {
     const initOptions = merge(
-      { method: 'PATCH', body: JSON.stringify(newObject), headers: { 'Content-Type': 'application/json'  } },
-      this.defaultFetchOptions,
+      { method: 'PATCH', body: JSON.stringify(record), headers: { 'Content-Type': 'application/json'  } },
+      this.getDefaultFetchOptions(),
       init,
     )
   
     return  fetch(this.buildUrl(this.url, id), initOptions)
   }
 
-  public delete(id: ID, init?: RequestInit) {
-    const initOptions = merge({ method: 'DELETE' }, this.defaultFetchOptions, init)
+  /**
+   * Make request for deleting record.
+   * @example
+   * const user = { id: '00000000-0000-0000-0000-000000000000', name: 'NEW NAME' }
+   * const customFetchOptions = { mode: 'cors', headers: { 'security-token': 'some-token' } }
+   * 
+   * // delete record
+   * endpoint.delete(user.id)
+   * 
+   * // delete with custom fetch options
+   * endpoint.delete(user.id, customFetchOptions)
+   * 
+   * @param id Record id.
+   * @param init Options for fetch request.
+   * @returns Promise with response.
+   */
+  public delete(id: ID, init: RequestInit = {}): Promise<Response> {
+    const initOptions = merge({ method: 'DELETE' }, this.getDefaultFetchOptions(), init)
 
     return fetch(this.buildUrl(this.url, id), initOptions)
   }

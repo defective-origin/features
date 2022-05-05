@@ -2,8 +2,6 @@ export type TNodeFunc = (...params: any) => Promise<any>
 export type TTreeNode = { [key: string]: TNode }
 export type TNode = TTreeNode | TNodeFunc | Module
 
-// TODO: add registers to root node
-
 /**
  * Service module.
  * @example
@@ -102,8 +100,8 @@ export class Module<TreeNode = TTreeNode, Options extends object = {}>
    * @param callback Function which returns new options.
    * @returns This.
    */
-  public opt(callback: (options?: Options) => any): this {
-    this._options = callback(this._options)
+  public opt(callback: (options?: Partial<Options>) => Partial<Options>): this {
+    this._options = callback(this._options) as Options
 
     return this
   }
@@ -196,8 +194,11 @@ export class Module<TreeNode = TTreeNode, Options extends object = {}>
     const lastKey = keys.pop()
     const changingNode = keys.reduce((currentNode, key) => currentNode[key], this._rootNode as Record<string, any>)
 
+    // register sub module
     if (node instanceof Module && lastKey) {
       changingNode[lastKey] = node._rootNode
+
+    // register node and wrap handlers
     } else if (lastKey) {
       changingNode[lastKey] = wrapHandlers ? this._wrapHandlers(node) : node
     }
@@ -205,7 +206,7 @@ export class Module<TreeNode = TTreeNode, Options extends object = {}>
     return this
   }
 
-    /**
+  /**
    * Register several nodes into root node.
    * @example
    * // register nodes
@@ -225,9 +226,9 @@ export class Module<TreeNode = TTreeNode, Options extends object = {}>
    * @param wrapHandlers Should the options be passed into the each functions.
    * @returns This.
    */
-    public registers(node: TTreeNode, wrapHandlers = true): this {
-      Object.entries(node).forEach(([name, node]) => this.register(name, node, wrapHandlers))
-  
-      return this
-    }
+  public registers(node: TTreeNode, wrapHandlers = true): this {
+    Object.entries(node).forEach(([name, node]) => this.register(name, node, wrapHandlers))
+
+    return this
+  }
 }
