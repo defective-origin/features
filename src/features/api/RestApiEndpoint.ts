@@ -1,25 +1,43 @@
-import { merge } from "lodash-es"
-
-// TODO: add subscription on changing?
-
+import { isNumber, isObject, isString, merge } from "lodash-es"
 
 export type ID = number | string
-export type DefaultFetchOptions = RequestInit | (() => RequestInit)
+export type TFetchOptions = RequestInit & { postfix?: string }
+export type TRestApiEndpointRequestOptions = TFetchOptions | (() => TFetchOptions)
 export type TPaginationOptions = {
   page: number | string
   count: number | string
 }
 
+
+export type TRestApiEndpointOptions = {
+  postfixes?: boolean,
+  sharedOptions?: TRestApiEndpointRequestOptions,
+  custom?: {
+    get?: TRestApiEndpointRequestOptions,
+    create?: TRestApiEndpointRequestOptions,
+    update?: TRestApiEndpointRequestOptions,
+    delete?: TRestApiEndpointRequestOptions,
+  }
+}
+
+export enum DefaultPostfixes {
+  get = 'details',
+  create = 'create',
+  update = 'update',
+  delete = 'delete',
+}
+
+
 /**
  * Request interface based on REST API architecture.
  * @example
- * const endpoint = new RestApiEndpoint('google.com')
+ * const endpoint = new RestApiEndpoint('https://mysite')
  * 
  * // init endpoint with default fetch options for all requests
- * const endpoint = new RestApiEndpoint('google.com', { mode: 'cors', headers: { 'security-token': 'some-token' })
+ * const endpoint = new RestApiEndpoint('https://mysite', { mode: 'cors', headers: { 'security-token': 'some-token' })
  * 
  * // init endpoint with getting postponed default fetch options for all requests
- * const endpoint = new RestApiEndpoint('google.com', () => ({ mode: 'cors', headers: { 'security-token': 'some-token' }))
+ * const endpoint = new RestApiEndpoint('https://mysite', () => ({ mode: 'cors', headers: { 'security-token': 'some-token' }))
  * 
  * // variables
  * const user = { id: '00000000-0000-0000-0000-000000000000', name: 'NEW NAME' }
@@ -42,28 +60,73 @@ export type TPaginationOptions = {
  * endpoint.update(user.id, user, customFetchOptions)
  * endpoint.delete(user.id, customFetchOptions)
  * 
+ * // request examples:
+ * // GET      https://mysite/api/users   OR https://mysite/api/users/details
+ * // GET      https://mysite/api/users/1 OR https://mysite/api/users/details/1
+ * // PUT      https://mysite/api/users   OR https://mysite/api/users/create
+ * // PATCH    https://mysite/api/users/1 OR https://mysite/api/users/update/1
+ * // DELETE   https://mysite/api/users/1 OR https://mysite/api/users/delete/1
  */
 export class RestApiEndpoint {
   constructor(
     private url: string,
-    private defaultFetchOptions: DefaultFetchOptions = {},
+    private options: TRestApiEndpointOptions = {},
   ) {}
 
   /**
-   * Build url from parts.
-   * @example
-   * this.buildUrl('google.com', 'users', '12345')
-   * // 'google.com/users/12345'
+   * Return fetch options.
    * 
-   * @param params Parts of urls.
-   * @returns Result url.
+   * @param options Clear options or function which returns options.
+   * @returns Fetch options.
    */
-  private buildUrl(...params: (string | number)[]): string {
-    return params.filter((item) => item || item === 0).join('/')
+  private getFetchOptions(options: TRestApiEndpointRequestOptions = {}): TFetchOptions {
+    return typeof options === 'function' ? options() : options
   }
 
-  private getDefaultFetchOptions(): RequestInit {
-    return typeof this.defaultFetchOptions === 'function' ? this.defaultFetchOptions() : this.defaultFetchOptions
+  /**
+   * Combine options in correct order.
+   * 
+   * @param defaultOptions Endpoint default options.
+   * @param customOptions Custom endpoint options which is got via constructor.
+   * @param singleOptions Custom endpoint options which is got via call.
+   * @returns Combined options.
+   */
+  private combineOptions(defaultOptions: TRestApiEndpointRequestOptions, customOptions: TRestApiEndpointRequestOptions = {}, singleOptions: TRestApiEndpointRequestOptions = {}) {
+    const requestOptionList = [defaultOptions, this.options.sharedOptions || {}, customOptions, singleOptions] as const
+    const fetchOptionList = requestOptionList.map((requestOption) => this.getFetchOptions(requestOption))
+
+    return merge(...fetchOptionList as [TFetchOptions])
+  }
+
+  /**
+   * Make fetch request.
+   * 
+   * @param options Fetch config options.
+   * @param urlPayload ID or params which can be add to url string.
+   * @returns Combined options.
+   */
+  private request(options: TFetchOptions, urlPayload?: ID | URLSearchParams) {
+    const { postfix, ...init } = options
+
+    return fetch(this.getUrl(postfix, urlPayload), init)
+  }
+
+  /**
+   * Return url by id or with postfix.
+   * @example
+   * this.getUrl('postfix', '12345')
+   * // 'https://mysite/api/users/postfix/12345'
+   * 
+   * @param postfix Part of url.
+   * @param idOrSearchParams Record ID or Search params.
+   * @returns Result url.
+   */
+  private getUrl(postfix?: string, idOrSearchParams?: ID | URLSearchParams) {
+    const urlWithPostfix = this.options?.postfixes ? `${this.url}/${postfix}` : this.url
+    const urlWithId = isNumber(idOrSearchParams) ? `${urlWithPostfix}/${idOrSearchParams}` : urlWithPostfix
+    const urlWithSearchParams = isObject(idOrSearchParams) ? `${urlWithId}?${new URLSearchParams(idOrSearchParams)}` : urlWithId
+
+    return urlWithSearchParams
   }
 
   /**
@@ -84,28 +147,25 @@ export class RestApiEndpoint {
    * endpoint.get(paginationOptions, customFetchOptions) // get several records on specific page
    * endpoint.get(user.id, customFetchOptions) // get record by id
    * 
-   * // get record via POST request
-   * endpoint.get(user.id, { isSecure: true })
-   * 
    * 
    * @param idOrOptionsOrInit Record id or Pagination options or Fetch options.
    * @param init Options for fetch request.
    * @returns Promise with response.
    */
-  public get<TInitOptions = RequestInit & { isSecure?: boolean }>(
-    idOrOptionsOrInit: TInitOptions | TPaginationOptions | ID = {} as TInitOptions,
-    init = {} as TInitOptions,
+  public get(
+    idOrOptionsOrInit: TRestApiEndpointRequestOptions | TPaginationOptions | ID = {},
+    init?: TRestApiEndpointRequestOptions,
   ): Promise<Response> {
-    const isFirstArgumentObject = typeof idOrOptionsOrInit === 'object' && idOrOptionsOrInit !== null
-    const isFirstArgumentID = typeof idOrOptionsOrInit === "string" || typeof idOrOptionsOrInit === "number"
-    const isFirstArgumentPaginationOptions = isFirstArgumentObject && 'page' in idOrOptionsOrInit
+    const isFirstArgumentID = isString(idOrOptionsOrInit) || isNumber(idOrOptionsOrInit)
+    const isFirstArgumentPaginationOptions = isObject(idOrOptionsOrInit) && 'page' in idOrOptionsOrInit
     const isFirstArgumentFetchOptions = !isFirstArgumentID && !isFirstArgumentPaginationOptions
-    const { isSecure, ...fetchOptions }: RequestInit & { isSecure?: boolean } = isFirstArgumentFetchOptions ? idOrOptionsOrInit : init
-    const initOptions = merge({ method: isSecure ? 'POST' : 'GET' }, this.getDefaultFetchOptions(), fetchOptions)
+    const fetchOptions = isFirstArgumentFetchOptions ? idOrOptionsOrInit : init
+    const defaultOptions = { postfix: DefaultPostfixes.get, method: 'GET', headers: { 'Content-Type': 'application/json'  } }
+    const options = this.combineOptions(defaultOptions, this.options.custom?.get, fetchOptions)
 
     // get record by id
     if (isFirstArgumentID) {
-      return fetch(this.buildUrl(this.url, idOrOptionsOrInit), initOptions)
+      return this.request(options, idOrOptionsOrInit)
     }
 
     // get records on specific page
@@ -115,11 +175,11 @@ export class RestApiEndpoint {
         count: idOrOptionsOrInit.count.toString(),
       })
 
-      return fetch(`${this.url}?${searchParams}`, initOptions)
+      return this.request(options, searchParams)
     }
 
     // get all records
-    return fetch(this.url, initOptions)
+    return this.request(options)
   }
 
   /**
@@ -139,14 +199,11 @@ export class RestApiEndpoint {
    * @param init Options for fetch request.
    * @returns Promise with response.
    */
-  public create(record: object, init: RequestInit = {}): Promise<Response> {
-    const initOptions = merge(
-      { method: 'PUT', body: JSON.stringify(record), headers: { 'Content-Type': 'application/json'  } },
-      this.getDefaultFetchOptions(),
-      init,
-    )
-  
-    return fetch(this.url, initOptions)
+  public create(record: object, init?: TRestApiEndpointRequestOptions): Promise<Response> {
+    const defaultOptions = { postfix: DefaultPostfixes.create, method: 'PUT', body: JSON.stringify(record), headers: { 'Content-Type': 'application/json'  } }
+    const options = this.combineOptions(defaultOptions, this.options.custom?.create, init)
+
+    return this.request(options)
   }
 
   /**
@@ -166,14 +223,11 @@ export class RestApiEndpoint {
    * @param init Options for fetch request.
    * @returns Promise with response.
    */
-  public update(id: ID, record: object, init: RequestInit = {}): Promise<Response> {
-    const initOptions = merge(
-      { method: 'PATCH', body: JSON.stringify(record), headers: { 'Content-Type': 'application/json'  } },
-      this.getDefaultFetchOptions(),
-      init,
-    )
-  
-    return  fetch(this.buildUrl(this.url, id), initOptions)
+  public update(id: ID, record: object, init?: TRestApiEndpointRequestOptions): Promise<Response> {
+    const defaultOptions = { postfix: DefaultPostfixes.update, method: 'PATCH', body: JSON.stringify(record), headers: { 'Content-Type': 'application/json'  } }
+    const options = this.combineOptions(defaultOptions, this.options.custom?.update, init)
+
+    return this.request(options, id)
   }
 
   /**
@@ -192,9 +246,10 @@ export class RestApiEndpoint {
    * @param init Options for fetch request.
    * @returns Promise with response.
    */
-  public delete(id: ID, init: RequestInit = {}): Promise<Response> {
-    const initOptions = merge({ method: 'DELETE' }, this.getDefaultFetchOptions(), init)
+  public delete(id: ID, init?: TRestApiEndpointRequestOptions): Promise<Response> {
+    const defaultOptions = { postfix: DefaultPostfixes.delete, method: 'DELETE', headers: { 'Content-Type': 'application/json'  } }
+    const options = this.combineOptions(defaultOptions, this.options.custom?.delete, init)
 
-    return fetch(this.buildUrl(this.url, id), initOptions)
+    return this.request(options, id)
   }
 }
